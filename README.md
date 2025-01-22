@@ -1,5 +1,5 @@
 ->Built a multimodal AI model for video sentiment and emotion analysis, leveraging PyTorch to process video, audio,
-  and text inputs.
+  and text inputs./n
 ->Trained the model with advanced features like video frame extraction, audio feature extraction, and text embedding
   using BERT, incorporating multimodal fusion for classification. Deployed the model on AWS SageMaker and utilized
   AWS S3 for secure video storage and scalable inference.
