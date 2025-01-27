@@ -6,3 +6,4 @@
 * Developed a SaaS platform using Next.js and Tailwind CSS, providing API key management, user authentication
   with Auth.js, and usage quota tracking.
 * Delivered real-time analysis results with a modern UI, enabling users to gain insights from uploaded videos efficiently
+  
