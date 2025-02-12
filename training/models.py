@@ -7,6 +7,10 @@ from sklearn.metrics import precision_score, accuracy_score
 from torch.utils.tensorboard import SummaryWriter
 import os
 from datetime import datetime
+# Thinking of this code as a system that understands emotions and sentiments from videos
+# What they are saying (text)
+# How they look (video)
+# How they sound (audio)
 
 # the code is defining a text encoder that uses BERT (a specific type of transformer model )
 class TextEncoder(nn.Module):
@@ -64,26 +68,30 @@ class AudioEncoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv_layers = nn.Sequential(
+
             # Lower level features
-            nn.Conv1d(64,64, kernel_size=3),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.MaxPool1d(2),
+            nn.Conv1d(64,64, kernel_size=3), # takes in 64 channels of audio, kernel looks at 3 time steps at once 
+            nn.BatchNorm1d(64), # Normalizes the data 
+            nn.ReLU(), # Activation fucntion
+            nn.MaxPool1d(2), # Reduces the time dimension by half 
+
             # Higher level features
-            nn.Conv1d(64, 128, kernel_size=3),
+            nn.Conv1d(64, 128, kernel_size=3), # increases the channel to 128 for more features
             nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.AdaptiveAvgPool1d(1),
+            nn.AdaptiveAvgPool1d(1), # Averages all time dimension by half
         )
-
+        # Freeze the weights- they won't be updated during training 
         for param in self.conv_layers.parameters():
             param.requires_grad = False
-        
+
+        # Final processing of audio features
         self.projection = nn.Sequential(
             nn.Linear(128,128),
             nn.ReLU(),
             nn.Dropout(0.2)
         )
+
     def forward(self, x):
         x = x.squeeze(1)
 
@@ -101,31 +109,32 @@ class MultimodalSentimentModel(nn.Module):
         self.video_encoder = VideoEncoder()
         self.audio_encoder = AudioEncoder()
 
-        # Fusion Layer
+        # Fusion Layer : Combines all features together
         self.fusion_layer = nn.Sequential(
-            nn.Linear(128 * 3, 256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Linear(128 * 3, 256), # Takes 384 inputs (128 from each encoder)
+            nn.BatchNorm1d(256), # Normalizes the combined features
+            nn.ReLU(), # Activation function 
+            nn.Dropout(0.3), # Prevents overfitting
             
         )
-        # Classification heads 
+        # Emotion classifier (predicts 7 emotions)
         self.emo_classifier = nn.Sequential(
-            nn.Linear(256, 64),
+            nn.Linear(256, 64), 
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(64,7) # Sadness , anger 
+            nn.Linear(64,7) # Outputs : 7 emotion scores
         )
-
+        # Sentiment classifier (predicts positive/negative/neutral)
         self.sentiment_classfier = nn.Sequential(
             nn.Linear(256,64),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(64,3) # Negative , positive , neutral
+            nn.Linear(64,3) # Outputs 3 sentiment scores
 
         )
 
     def forward(self, text_inputs, video_frames, audio_features) :
+        # Get features from each encoder
         text_features = self.text_encoder(
             text_inputs['input_ids'],
             text_inputs['attention_mask'],
@@ -133,14 +142,15 @@ class MultimodalSentimentModel(nn.Module):
         video_features = self.video_encoder(video_frames)
         audio_features = self.audio_encoder(audio_features)
 
-        # Concatenate multimodal features 
+        # Combine all features
         combined_features = torch.cat([
             text_features,
             video_features,
             audio_features
         ], dim=1) 
-
+        # Process combined features
         fused_features = self.fusion_layer(combined_features)
+        # Make predictions    
         emotion_output = self.emo_classifier(fused_features)
         sentiment_output = self.sentiment_classfier(fused_features)
 
@@ -153,67 +163,74 @@ class MultimodalSentimentModel(nn.Module):
 
 class MultimodalTrainer:
             def __init__(self,model,train_loader, val_loader):
-                self.model = model
-                self.train_loader = train_loader
-                self.val_loader = val_loader
+                # Store the model and data loaders as class attribtues
+                self.model = model          # The multimodal sentiment model
+                self.train_loader = train_loader   # Dataloader for training data
+                self.val_loader = val_loader  # Dataloader for validation data
 
-                # Log datatset sized 
-                train_size = len(train_loader.dataset)
-                val_size = len(val_loader.dataset)
+                # Print dataset information
+                train_size = len(train_loader.dataset)  # Get total training samples
+                val_size = len(val_loader.dataset) # Get total validation samples
                 print("\nDataset sizes:")
                 print(f"Training samples: {train_size:,}")
                 print(f"Validation samples: {val_size:,}")
                 print(f"Batches per epoch: {len(train_loader):,}")
 
-                
-                timestamp = datetime.now().strftime('%b%d_%H-%M-%S')  # Dec17_14-22-35
+                # Setup Tensorboard logging
+                timestamp = datetime.now().strftime('%b%d_%H-%M-%S')  # Create timestamp 
+                # Choose directory based on environment (Sagemaker or local )
                 base_dir = '/opt/ml/output/tensorboard' if 'SM_MODEL_DIR' in os.environ else 'runs'
                 log_dir = f"{base_dir}/run_{timestamp}"
-                self.writer = SummaryWriter(log_dir=log_dir)
-                self.global_step = 0
+                self.writer = SummaryWriter(log_dir=log_dir)  # Initialize Tensorboard writer
+                self.global_step = 0    # Counter for training steps
 
+                # Set up optimizer with different learning rates for different parts
                 # Very high :1 , high: 0.1-0.01, medium: 1e-1, low: 1e-4, very low: 1e-5
                 self.optimizer = torch.optim.Adam([
-                    {'params': model.text_encoder.paramters(), 'lr': 8e-6},
-                    {'params': model.video_encoder.paramters(), 'lr': 8e-5},
-                    {'params': model.audio_encoder.paramters(), 'lr': 8e-5},
-                    {'params': model.fusion_layer.paramters(), 'lr': 5e-4},
-                    {'params': model.emotion_classifier.paramters(), 'lr': 5e-6},
-                    {'params': model.sentiment_classifier.paramters(), 'lr': 5e-4}
+                    {'params': model.text_encoder.paramters(), 'lr': 8e-6},  # Very low learning rate
+                    {'params': model.video_encoder.paramters(), 'lr': 8e-5}, # Higher learning rate
+                    {'params': model.audio_encoder.paramters(), 'lr': 8e-5}, # Higher learning rate
+                    {'params': model.fusion_layer.paramters(), 'lr': 5e-4},  # Highest learning rate
+                    {'params': model.emotion_classifier.paramters(), 'lr': 5e-6},  # Very low learning rate
+                    {'params': model.sentiment_classifier.paramters(), 'lr': 5e-4} # Highest learning rate
                 
-                ], weight_decay = 1e-5)
+                ], weight_decay = 1e-5)     # Add weight decay to prevent overfitting
 
                 self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                     self.optimizer,
-                    mode = "min",
-                    factor = 0.1,
-                    patience= 2
+                    mode = "min",   # Reduce LR when monitored value stops decreasing
+                    factor = 0.1,   # Multiply LR by 0.1 when reducing
+                    patience= 2     # Wait 2 epochs before reducing LR
                 )
+
+                # Loss functions for both tasks
                 self.emotion_criterion = nn.CrossEntropyLoss(
-                    label_smoothing=0.05
+                    label_smoothing=0.05    # Add label smoothing to prevent overconfident predictions
                 )
                 self.sentiment_criterion = nn.CrossEntropyLoss(
                     label_smoothing=0.05
                 )
             def log_metrics(self, losses, metrics=None, phase="train"):
+                # For training phase, store current losses
                 if phase == "train":
                     self.current_train_losses = losses
-                else:  # Validation phase
+                else:  # For validation phase, log both train and val losses
+                    # Log total loss
                     self.writer.add_scalar(
                         'loss/total/train', self.current_train_losses['total'], self.global_step)
                     self.writer.add_scalar(
                         'loss/total/val', losses['total'], self.global_step)
-
+                    # Log emotion loss
                     self.writer.add_scalar(
                         'loss/emotion/train', self.current_train_losses['emotion'], self.global_step)
                     self.writer.add_scalar(
                         'loss/emotion/val', losses['emotion'], self.global_step)
-
+                    # Log sentiment loss
                     self.writer.add_scalar(
                         'loss/sentiment/train', self.current_train_losses['sentiment'], self.global_step)
                     self.writer.add_scalar(
                         'loss/sentiment/val', losses['sentiment'], self.global_step)
-
+                # If metrics are provided, log them
                 if metrics:
                     self.writer.add_scalar(
                         f'{phase}/emotion_precision', metrics['emotion_precision'], self.global_step)
@@ -225,24 +242,30 @@ class MultimodalTrainer:
                         f'{phase}/sentiment_accuracy', metrics['sentiment_accuracy'], self.global_step)  
 
             def train_epoch(self):
+                # Set model to training mode (enables dropout, batch norm updates, etc.)
                 self.model.train()
+                # Initialize running losses for tracking
                 running_loss = {'total':0, 'emotion':0, 'sentiment': 0}
+                # Loop through each batch in training data
                 for batch in self.train_loader:
+                    # Get the device (CPU/GPU) where model is located
                     device = next(self.model.parameters()).device
+                    # Prepare text inputs and move to device
                     text_inputs = {
                         'input_ids': batch['text_input']['input_ids'].to(device),
                         'attention_mask': batch['text_inpt']['attention_mask'].to(device)
                     }
+                    # Move other inputs to device
                     video_frames = batch['video_frames'].to(device)
                     audio_features = batch['audio_frames'].to(device)
                     emotion_labels = batch['emotion_label'].to(device)
                     sentiment_labels = batch['sentiment_label'].to(device)
 
-                    # Zero gradient
+                    # Clear gradients from previous batch
                     self.optimizer.zero_grad()
 
                     # Forward pass
-                    outputs = self.odel(text_inputs, video_frames, audio_features)
+                    outputs = self.model(text_inputs, video_frames, audio_features)
 
                     # Calculate losses using raw logics
                     emotion_loss = self.emotion_criterion(
