@@ -187,12 +187,12 @@ class MultimodalTrainer:
                 # Set up optimizer with different learning rates for different parts
                 # Very high :1 , high: 0.1-0.01, medium: 1e-1, low: 1e-4, very low: 1e-5
                 self.optimizer = torch.optim.Adam([
-                    {'params': model.text_encoder.paramters(), 'lr': 8e-6},  # Very low learning rate
-                    {'params': model.video_encoder.paramters(), 'lr': 8e-5}, # Higher learning rate
-                    {'params': model.audio_encoder.paramters(), 'lr': 8e-5}, # Higher learning rate
-                    {'params': model.fusion_layer.paramters(), 'lr': 5e-4},  # Highest learning rate
-                    {'params': model.emotion_classifier.paramters(), 'lr': 5e-6},  # Very low learning rate
-                    {'params': model.sentiment_classifier.paramters(), 'lr': 5e-4} # Highest learning rate
+                    {'params': model.text_encoder.parameters(), 'lr': 8e-6},  # Very low learning rate
+                    {'params': model.video_encoder.parameters(), 'lr': 8e-5}, # Higher learning rate
+                    {'params': model.audio_encoder.parameters(), 'lr': 8e-5}, # Higher learning rate
+                    {'params': model.fusion_layer.parameters(), 'lr': 5e-4},  # Highest learning rate
+                    {'params': model.emo_classifier.parameters(), 'lr': 5e-6},  # Very low learning rate
+                    {'params': model.sentiment_classfier.parameters(), 'lr': 5e-4} # Highest learning rate
                 
                 ], weight_decay = 1e-5)     # Add weight decay to prevent overfitting
 
@@ -206,7 +206,7 @@ class MultimodalTrainer:
                 # Loss functions for both tasks
                 self.emotion_criterion = nn.CrossEntropyLoss(
                     label_smoothing=0.05    # Add label smoothing to prevent overconfident predictions
-                )
+                 )
                 self.sentiment_criterion = nn.CrossEntropyLoss(
                     label_smoothing=0.05
                 )
